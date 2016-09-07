@@ -17,11 +17,8 @@ import java.nio.FloatBuffer;
 /**
  * Created by alvaro on 5/7/16.
  */
-public class Plane implements SurfaceTexture.OnFrameAvailableListener {
+public class Plane {
 
-    private SurfaceTexture mSurface;
-    private boolean updateTexture;
-    private float[] mSTMatrix = new float[16];
     private int muSTMatrixHandle;
     private boolean video;
 
@@ -43,15 +40,16 @@ public class Plane implements SurfaceTexture.OnFrameAvailableListener {
 //                    "void main() {" +
 //                    "  gl_Position = uMVPMatrix * vPosition;" +
 //                    "}";
-            "uniform mat4 uMVPMatrix;" +
-                    "uniform mat4 uSTMatrix;\n" +
-            "attribute vec4 vPosition;\n" +
-            "attribute vec4 aTexCoord;\n" +
-            "varying   vec2 vTexCoord;\n" +
-            "void main() {\n" +
-            "  gl_Position = uMVPMatrix * vPosition;\n" +
-            "  vTexCoord   = (uSTMatrix * aTexCoord).xy;\n" +
-            "}\n";
+            "uniform mat4 uMVPMatrix;\n" +
+                    "uniform mat4 uTextureMatrix;\n" +
+                    "attribute vec4 aPosition;\n" +
+                    "attribute vec4 aTextureCoord;\n" +
+                    "varying vec2 vTextureCoord;\n" +
+                    "\n" +
+                    "void main() {\n" +
+                    "    gl_Position = uMVPMatrix * aPosition;\n" +
+                    "    vTextureCoord = (uTextureMatrix * aTextureCoord).xy;\n" +
+                    "}\n";
 
     private static final String fragmentShaderCode =
 //            "precision mediump float;" +
@@ -59,17 +57,25 @@ public class Plane implements SurfaceTexture.OnFrameAvailableListener {
 //                    "void main() {" +
 //                    "  gl_FragColor = vColor;" +
 //                    "}";
-            "#extension GL_OES_EGL_image_external : require\n" +
+           "precision mediump float;\n" +
+                   "varying vec2 vTextureCoord;\n" +
+                   "uniform sampler2D sTexture;\n" +
+                   "uniform vec4 vColor;\n" +
+                   "\n" +
+                   "void main() {\n" +
+                   "    vec4 color = texture2D(sTexture, vec2(vTextureCoord.x,vTextureCoord.y));\n" +
+                   "    vec4 color2 = vec4(vTextureCoord.x, vTextureCoord.y, 0.0,1.0);\n" +
+                   "    gl_FragColor = color+color2;\n" +
+                   "}\n";
+    private static final String videoFragment = "#extension GL_OES_EGL_image_external : require\n" +
+            "\n" +
             "precision mediump float;\n" +
-            "uniform samplerExternalOES uSampler;\n" +
-            "uniform vec4 vColor;\n" +
-            "varying vec2 vTexCoord;\n" +
+            "varying vec2 vTextureCoord;\n" +
+            "uniform samplerExternalOES sTexture;\n" +
+            "\n" +
             "void main() {\n" +
-                    "if (vColor.x==1.0 && vColor.y ==1.0 && vColor.z == 1.0){\n"+
-            "  gl_FragColor = texture2D(uSampler, vTexCoord);\n" +
-                    "} else{\n" +
-                    "  gl_FragColor = vColor;\n" +
-                    "}" +
+            "    vec4 color = texture2D(sTexture, vTextureCoord);\n" +
+            "    gl_FragColor = color;\n" +
             "}\n";
 
     private FloatBuffer vertexBuffer;
@@ -86,8 +92,7 @@ public class Plane implements SurfaceTexture.OnFrameAvailableListener {
     float color[] = new float[4];
 
 
-    public Plane(MediaPlayer player,boolean video) {
-        Matrix.setIdentityM(mSTMatrix, 0);
+    public Plane(boolean video) {
         randomizeColor();
         buildVertexBuffer();
 
@@ -117,8 +122,16 @@ public class Plane implements SurfaceTexture.OnFrameAvailableListener {
     public void initializeProgram() {
         int vertexShader = loadShader(GLES20.GL_VERTEX_SHADER,
                 vertexShaderCode);
-        int fragmentShader = loadShader(GLES20.GL_FRAGMENT_SHADER,
-                fragmentShaderCode);
+        int fragmentShader;
+        checkGlError("initialize0");
+        if (video){
+            fragmentShader= loadShader(GLES20.GL_FRAGMENT_SHADER,
+                    videoFragment);
+        }else{
+            fragmentShader= loadShader(GLES20.GL_FRAGMENT_SHADER,
+                    fragmentShaderCode);
+        }
+
 
         // create empty OpenGL ES Program
         program = GLES20.glCreateProgram();
@@ -137,30 +150,8 @@ public class Plane implements SurfaceTexture.OnFrameAvailableListener {
             throw new RuntimeException("Could not get attrib location for uSTMatrix");
         }
 
-        if(video) {
+        checkGlError("initialize6");
 
-// generate one texture pointer and bind it as an external texture.
-            int[] textures = new int[1];
-            GLES20.glGenTextures(1, textures, 0);
-            textureId = textures[0];
-            GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
-            GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, textureId);
-            checkGlError("bindtexture " + textureId);
-// No mip-mapping with camera source.
-            GLES20.glTexParameterf(GLES11Ext.GL_TEXTURE_EXTERNAL_OES,
-                    GLES20.GL_TEXTURE_MIN_FILTER,
-                    GLES20.GL_NEAREST);
-            GLES20.glTexParameterf(GLES11Ext.GL_TEXTURE_EXTERNAL_OES,
-                    GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR);
-// Clamp to edge is only option.
-            GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES,
-                    GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE);
-            GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES,
-                    GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE);
-
-        }
-
-        colorHandle = GLES20.glGetUniformLocation(program, "vColor");
     }
 
     private static int loadShader(int type, String shaderCode){
@@ -175,23 +166,15 @@ public class Plane implements SurfaceTexture.OnFrameAvailableListener {
         return shader;
     }
 
-    public void draw(float[] mvpMatrix) {
-
-        synchronized(this) {
-            if (updateTexture && video) {
-                mSurface.updateTexImage();
-                mSurface.getTransformMatrix(mSTMatrix);
-                updateTexture = false;
-            } else if(video){
-            }
-        }
+    public void draw(float[] mvpMatrix, int textureId, float[] mSTMatrix) {
 
         // get handles
-        positionHandle = GLES20.glGetAttribLocation(program, "vPosition");
+        positionHandle = GLES20.glGetAttribLocation(program, "aPosition");
         mvpMatrixHandle = GLES20.glGetUniformLocation(program, "uMVPMatrix");
-        texCoordHandle =  GLES20.glGetAttribLocation(program,"aTexCoord");
-        muSTMatrixHandle = GLES20.glGetUniformLocation(program, "uSTMatrix");
-        int i = GLES20.glGetUniformLocation(program, "uSampler");
+        texCoordHandle =  GLES20.glGetAttribLocation(program,"aTextureCoord");
+        muSTMatrixHandle = GLES20.glGetUniformLocation(program, "uTextureMatrix");
+        int i = GLES20.glGetUniformLocation(program, "sTexture");
+        colorHandle = GLES20.glGetUniformLocation(program, "vColor");
 
         GLES20.glUseProgram(program);
 
@@ -201,9 +184,14 @@ public class Plane implements SurfaceTexture.OnFrameAvailableListener {
         GLES20.glEnableVertexAttribArray(positionHandle);
 
         if(video && textureId!=-1) {
+            GLES20.glBindTexture(
+                    GLES11Ext.GL_TEXTURE_EXTERNAL_OES,
+                    textureId);
+        } else{
             GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
-            GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, textureId);
-            GLES20.glUniform1i(i, 0);
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, textureId);
+        }
+        GLES20.glUniform1i(i, 0);
 //            Log.d("textura", ""+i + " "+textureId);
 
             vertexBuffer.position(3);
@@ -212,7 +200,6 @@ public class Plane implements SurfaceTexture.OnFrameAvailableListener {
             GLES20.glEnableVertexAttribArray(texCoordHandle);
 
             GLES20.glUniformMatrix4fv(muSTMatrixHandle, 1, false, mSTMatrix, 0);
-        }
 
         // Pass the projection and view transformation to the shader
         GLES20.glUniformMatrix4fv(mvpMatrixHandle, 1, false, mvpMatrix, 0);
@@ -224,20 +211,9 @@ public class Plane implements SurfaceTexture.OnFrameAvailableListener {
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, VERTICES_PER_PLANE);
 //        GLES20.glDisableVertexAttribArray(positionHandle);
         GLES20.glFlush();
+        checkGlError("draw");
     }
 
-    public Surface getSurface(){
-        mSurface = new SurfaceTexture(textureId);
-        mSurface.setOnFrameAvailableListener(this);
-//        Log.d("textureID", ""+textureId);
-        return new Surface(mSurface);
-    }
-
-    @Override
-    public synchronized void onFrameAvailable(SurfaceTexture surfaceTexture) {
-        if(video)
-            updateTexture = true;
-    }
 
     public void setColor(float x, float y, float z){
         color[0] = x;
@@ -246,11 +222,11 @@ public class Plane implements SurfaceTexture.OnFrameAvailableListener {
     }
 
 
-    private void checkGlError(String op) {
+    public static void checkGlError(String op) {
         int error;
         while ((error = GLES20.glGetError()) != GLES20.GL_NO_ERROR) {
-            Log.e("VideoRender", op + ": glError " + error);
-            throw new RuntimeException(op + ": glError " + error);
+            Log.e("plane", op + ": glGetError: 0x" + Integer.toHexString(error));
+            throw new RuntimeException("glGetError encountered (see log)");
         }
     }
 }

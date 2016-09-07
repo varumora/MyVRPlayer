@@ -17,7 +17,6 @@ import java.util.List;
 
 public class Cube {
 
-    private MediaPlayer player;
 
     private boolean isInitialized;
 
@@ -80,13 +79,7 @@ public class Cube {
             FACE_BOTTOM
     };
 
-    public Cube(String url) {
-        player = new MediaPlayer();
-        try {
-            player.setDataSource(url);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+    public Cube() {
         initializeTransforms();
         initializePlanes();
         isInitialized = false;
@@ -132,9 +125,9 @@ public class Cube {
     private void initializePlanes() {
         for (int i = 0; i < FACES_PER_CUBE; ++i) {
             if(i == 1)
-                planes[i] = new Plane(player,true);
+                planes[i] = new Plane(false);
             else
-                planes[i] = new Plane(player,true);
+                planes[i] = new Plane(false);
         }
 
     }
@@ -144,29 +137,18 @@ public class Cube {
             plane.initializeProgram();
         }
         planes[1].setColor(1.0f,1.0f,1.0f);
-        player.setSurface(planes[1].getSurface());
-        player.setLooping(true);
-        player.setScreenOnWhilePlaying(true);
 
-
-        try {
-            player.prepare();
-        } catch (IOException t) {
-            t.printStackTrace();
-        }
-
-        player.start();
         isInitialized = true;
     };
 
-    public void draw(float[] mvpMatrix) {
+    public void draw(float[] mvpMatrix, int textureId, float[] mSTMatrix) {
         if (!isInitialized)
             throw new RuntimeException("Cube not initialized!");
         float[] modelView = new float[16];
         for (int i = 0; i < FACES_PER_CUBE; ++i) {
             // transform mvpMatrix with the transform specific to this plane
             Matrix.multiplyMM(modelView, 0, mvpMatrix, 0, transforms.get(i), 0);
-            planes[i].draw(modelView);
+            planes[i].draw(modelView, textureId, mSTMatrix);
         }
     }
 
@@ -216,12 +198,5 @@ public class Cube {
         }
     }
 
-    public void stop(){
-        player.stop();
-        player.release();
-    }
-    public void restart(){
-        player.start();
-    }
 
 }
